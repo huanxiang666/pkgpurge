@@ -176,8 +176,13 @@ class MainWindow(Gtk.ApplicationWindow):
         hb.set_title_widget(title)
 
         self.search = Gtk.SearchEntry()
-        self.search.set_placeholder_text(_("搜索软件包…"))
-        self.search.set_width_chars(28)
+        # GTK 4.6 的 SearchEntry 无 placeholder/width-chars（新版才下沉到
+        # SearchEntry 自身），逐项探测，缺了就优雅降级——CI 22.04 实测教训
+        for setter, value in (("set_placeholder_text", _("搜索软件包…")),
+                              ("set_width_chars", 28)):
+            fn = getattr(self.search, setter, None)
+            if callable(fn):
+                fn(value)
         self.search.connect("search-changed", self._on_search_changed)
         hb.pack_start(self.search)
 
@@ -592,7 +597,20 @@ class PkgPurgeApp(Gtk.Application):
         self._watchdog_fired = False
 
     def do_activate(self) -> None:
-        win = MainWindow(self, selftest=self.selftest)
+        # B3 同型防线：窗口构建异常不许把主循环晾成永久空转，
+        # 显式打印结果并退出（selftest 直接判失败）
+        try:
+            win = MainWindow(self, selftest=self.selftest)
+        except Exception as e:  # noqa: BLE001
+            import traceback
+            traceback.print_exc()
+            if self.selftest:
+                self.selftest_ok = False
+                print(json.dumps({"selftest": False,
+                                  "error": f"window construction failed: {e}"}),
+                      flush=True)
+            self.quit()
+            return
         win.present()
         if self.selftest:
             # 看门狗：60 秒没完成即判失败，防挂死 CI/验收
