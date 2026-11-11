@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>PkgPurge</vendor>
+  <vendor_url>https://github.com/huanxiang666/pkgpurge</vendor_url>
+
+  <action id="com.github.pkgpurge.uninstall">
+    <description>Uninstall software packages</description>
+    <description xml:lang="zh_CN">卸载软件包</description>
+    <message>PkgPurge needs administrator permission to uninstall packages</message>
+    <message xml:lang="zh_CN">PkgPurge 需要管理员权限来卸载软件包</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@HELPER_PATH@</annotate>
+  </action>
+</policyconfig>

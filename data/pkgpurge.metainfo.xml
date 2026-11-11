@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.github.pkgpurge</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Package Uninstaller</name>
+  <name xml:lang="zh-CN">软件包卸载器</name>
+  <summary>Cross-distro GUI to browse and uninstall system packages</summary>
+  <summary xml:lang="zh-CN">跨发行版的系统软件包浏览与卸载图形工具</summary>
+  <description>
+    <p>
+      PkgPurge lists every package installed through the system package
+      manager (APT, DNF, Zypper, Pacman, APK), lets you multi-select packages,
+      previews the full dependency cascade before anything is removed, and
+      executes the removal through pkexec with a strict command whitelist.
+    </p>
+    <p xml:lang="zh-CN">
+      PkgPurge 列出系统包管理器（APT、DNF、Zypper、Pacman、APK）安装的全部软件包，
+      支持多选卸载；执行前先用模拟预览展示完整的依赖级联，
+      实际卸载通过 pkexec 提权，且提权助手只放行白名单内的包管理命令。
+    </p>
+  </description>
+  <launchable type="desktop-id">pkgpurge.desktop</launchable>
+  <url type="homepage">https://github.com/huanxiang666/pkgpurge</url>
+  <url type="bugtracker">https://github.com/huanxiang666/pkgpurge/issues</url>
+  <requires>
+    <display_length compare="ge">720</display_length>
+  </requires>
+  <recommends>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </recommends>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.0.0" date="2026-11-11">
+      <description>
+        <p>First release: APT/DNF/Zypper/Pacman/APK backends, GTK4 GUI, CLI, deb packaging.</p>
+      </description>
+    </release>
+  </releases>
+</component>
