@@ -15,7 +15,7 @@ import threading
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, Gtk, Pango  # noqa: E402
+from gi.repository import GLib, Gio, Gtk, Pango  # noqa: E402
 
 from . import APP_ID, __version__  # noqa: E402
 from .backends import detect_backend, distro_pretty  # noqa: E402
@@ -583,7 +583,10 @@ class MainWindow(Gtk.ApplicationWindow):
 
 class PkgPurgeApp(Gtk.Application):
     def __init__(self, selftest: bool = False):
-        super().__init__(application_id=APP_ID)
+        # NON_UNIQUE：selftest/CI 环境无 D-Bus 会话总线时不做总线注册，
+        # 避免 g_application_register 在残缺环境下阻塞（22.04 runner 实测挂起点）
+        super().__init__(application_id=APP_ID,
+                         flags=Gio.ApplicationFlags.NON_UNIQUE)
         self.selftest = selftest
         self.selftest_ok: bool | None = None
         self._watchdog_fired = False
@@ -612,6 +615,11 @@ def run_gui() -> int:
 
 
 def run_selftest() -> int:
+    # 双保险看门狗：GLib 定时器在主循环里；faulthandler 在解释器层，
+    # 主循环卡死（如 D-Bus 注册阻塞）时 90s 后打 traceback 并强制退出
+    import faulthandler
+    faulthandler.dump_traceback_later(90, exit=True)
     app = PkgPurgeApp(selftest=True)
     app.run(None)
+    faulthandler.cancel_dump_traceback_later()
     return 0 if app.selftest_ok else 1

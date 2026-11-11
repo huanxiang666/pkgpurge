@@ -57,4 +57,7 @@ jobs:
       - name: Unit tests with system python3
         run: python3 -m unittest discover -s tests
       - name: GUI selftest under Xvfb
-        run: xvfb-run -a python3 -m pkgpurge --selftest
+        # 双层看门狗：应用内 GLib 60s + faulthandler 90s；外层 timeout 兜住
+        # xvfb-run 自身的挂起（22.04 runner 实测过）
+        timeout-minutes: 5
+        run: timeout --kill-after=30s 240s xvfb-run -a python3 -m pkgpurge --selftest
