@@ -48,10 +48,14 @@ class PacmanBackend(PackageBackend):
             name = fields.get("NAME", "")
             if not name:
                 continue
+            try:
+                isize = int(fields.get("ISIZE", "0") or 0)
+            except ValueError:
+                isize = 0  # N8：畸形 ISIZE 不拖垮整个列表，与 apt/rpm/apk 口径一致
             pkgs.append(Package(
                 name=name,
                 version=fields.get("VERSION", ""),
-                size_bytes=int(fields.get("ISIZE", "0") or 0),
+                size_bytes=isize,
                 summary=(fields.get("DESC", "") or "").replace("\n", " "),
                 auto_installed=bool(explicit) and name not in explicit,
             ))
@@ -93,7 +97,7 @@ class PacmanBackend(PackageBackend):
         rc, out, err = self._run(["pacman", "-Qi", name])
         return out.strip() if rc == 0 else f"(pacman -Qi 失败, rc={rc}) {err.strip()[:200]}"
 
-    def simulate_removal(self, names: list[str], purge: bool = False) -> list[str]:
+    def simulate_removal(self, names: list[str], purge: bool = False) -> tuple[list[str], bool]:
         names = validate_names(names)
         flags = "-Rsn" if purge else "-Rs"
         rc, out, err = self._run(
@@ -114,7 +118,10 @@ class PacmanBackend(PackageBackend):
                     grab = False
                     continue
                 targets += line.split()
-        return [self._strip_version(t) for t in targets] or list(names)
+        if not targets:
+            # B2：解析失败回退请求名单，parsed_ok=False 由调用方明示
+            return list(names), False
+        return [self._strip_version(t) for t in targets], True
 
     @staticmethod
     def _strip_version(target: str) -> str:

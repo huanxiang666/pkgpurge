@@ -12,6 +12,15 @@ fi
 PREFIX="${1:-/usr/local}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# N11：PREFIX 参与 rm -rf 路径拼接，必须校验为绝对路径且不是根
+case "$PREFIX" in
+  /*) ;;
+  *) echo "error: PREFIX must be an absolute path (got: '$PREFIX')"; exit 1 ;;
+esac
+if [ -z "$PREFIX" ] || [ "$PREFIX" = "/" ]; then
+  echo "error: PREFIX must not be /"; exit 1
+fi
+
 [ "$(id -u)" = 0 ] || { echo "error: run as root (sudo ./install.sh)"; exit 1; }
 
 HELPER="$PREFIX/lib/pkgpurge/pkexec_helper.py"

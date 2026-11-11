@@ -85,6 +85,29 @@ class CliTestCase(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("illegal package name", err)
 
+    def test_remove_simulate_warns_on_parse_failure(self):
+        # B2：parsed_ok=False 时 CLI 必须显著警示，回退名单不得冒充级联结果
+        class StubBackend(AptBackend):
+            def simulate_removal(self, names, purge=False):
+                return list(names), False
+
+        with patch.object(cli, "detect_backend",
+                          return_value=StubBackend(run=fake_run_factory())):
+            rc, out, _ = self.run_cli(["remove", "foo", "--simulate"])
+        self.assertEqual(rc, 0)
+        self.assertIn("WARNING", out)
+        self.assertIn("may include more", out)
+
+    def test_remove_dry_run_report_distinguishable(self):
+        # N16：dry-run 成功文案必须与真实卸载可区分
+        from pkgpurge.backends.base import OpResult
+        with patch.object(cli, "elevated_run",
+                          return_value=OpResult(ok=True, message="all operations succeeded")):
+            rc, out, _ = self.run_cli(["remove", "foo", "--yes", "--dry-run"])
+        self.assertEqual(rc, 0)
+        self.assertIn("DRY-RUN OK (nothing was removed)", out)
+        self.assertNotIn("OK: all operations succeeded", out)
+
     def test_doctor(self):
         rc, out, _ = self.run_cli(["doctor"])
         self.assertEqual(rc, 0)

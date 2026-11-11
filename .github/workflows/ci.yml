@@ -20,6 +20,8 @@ jobs:
           python-version: "3.12"
       - name: Unit tests (backends / helper whitelist / CLI)
         run: python -m unittest discover -s tests -v
+      - name: Mutation check (assertions must go red when the guard is removed)
+        run: bash scripts/mutation-check.sh
       - name: CLI doctor (real apt backend on runner)
         run: |
           python -m pkgpurge doctor
@@ -33,3 +35,26 @@ jobs:
         with:
           name: pkgpurge-deb-${{ matrix.os }}
           path: dist/*.deb
+
+  gui-selftest:
+    # 真实建窗 + 读真包列表；22.04 的 GTK 4.6 顺带验证 MessageDialog 降级路径
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK4 + PyGObject + Xvfb (system python3)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-gi gir1.2-gtk-4.0 xvfb
+      - name: Report GTK version under test
+        run: |
+          python3 -c 'import gi; gi.require_version("Gtk","4.0"); from gi.repository import Gtk; \
+            print("GTK", Gtk.get_major_version(), Gtk.get_minor_version(), \
+                  "AlertDialog:", hasattr(Gtk, "AlertDialog"))'
+      - name: Unit tests with system python3
+        run: python3 -m unittest discover -s tests
+      - name: GUI selftest under Xvfb
+        run: xvfb-run -a python3 -m pkgpurge --selftest

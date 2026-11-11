@@ -93,8 +93,9 @@ class TestAptBackend(unittest.TestCase):
                 "Remv bar [2.0]\n"), ""),
         })
         b = AptBackend(run=run)
-        got = b.simulate_removal(["foo"])
+        got, parsed_ok = b.simulate_removal(["foo"])
         self.assertEqual(got, ["foo", "libdep", "bar"])
+        self.assertTrue(parsed_ok)
 
     def test_simulate_empty_means_nothing_to_remove(self):
         # rc=0 但无 Remv 行（包未安装/仅 rc 残留）：必须返回空而不是回退输入
@@ -104,7 +105,9 @@ class TestAptBackend(unittest.TestCase):
                                    "Package 'foo' is not installed, so not removed\n", ""),
         })
         b = AptBackend(run=run)
-        self.assertEqual(b.simulate_removal(["foo"]), [])
+        got, parsed_ok = b.simulate_removal(["foo"])
+        self.assertEqual(got, [])
+        self.assertTrue(parsed_ok)
 
     def test_autoremove_ops(self):
         self.assertEqual(self.b.autoremove_ops(),
@@ -154,6 +157,16 @@ Operation aborted.
                " foo   x86_64  1.0  @System  1 M\n")
         self.assertEqual(DnfBackend._parse_dnf_removal(out), ["foo"])
 
+    def test_simulate_fallback_flags_parsed_ok_false(self):
+        # B2：解析不出任何行时回退请求名单，但必须带 parsed_ok=False
+        run = FakeRun({
+            ("dnf", "-y", "--assumeno"): (1, "weird output without tables\n", ""),
+        })
+        b = DnfBackend(run=run)
+        got, parsed_ok = b.simulate_removal(["foo"])
+        self.assertEqual(got, ["foo"])
+        self.assertFalse(parsed_ok)
+
     def test_removal_ops(self):
         self.assertEqual(self.b.removal_ops(["foo"]),
                          [["dnf", "-y", "remove", "foo"]])
@@ -169,11 +182,21 @@ class TestZypperBackend(unittest.TestCase):
                "r | foo   | 1.0-1   | x86_64 | main\n"
                "r | bar   | 2.0-1   | noarch | main\n"
                "  | keep  | 1.0-1   | x86_64 | main\n")
-        got = ZypperBackend._parse_zypper_removal(out, ["fallback"])
+        got = ZypperBackend._parse_zypper_removal(out)
         self.assertEqual(got, ["foo", "bar"])
 
-    def test_parse_fallback(self):
-        self.assertEqual(ZypperBackend._parse_zypper_removal("junk", ["x"]), ["x"])
+    def test_parse_junk_returns_empty(self):
+        # B2：解析器本身不再内置回退；回退语义由 simulate_removal 统一负责
+        self.assertEqual(ZypperBackend._parse_zypper_removal("junk"), [])
+
+    def test_simulate_fallback_flags_parsed_ok_false(self):
+        run = FakeRun({
+            ("zypper", "--non-interactive", "rm"): (0, "unparsable garbage\n", ""),
+        })
+        b = ZypperBackend(run=run)
+        got, parsed_ok = b.simulate_removal(["foo"])
+        self.assertEqual(got, ["foo"])
+        self.assertFalse(parsed_ok)
 
     def test_removal_ops(self):
         b = ZypperBackend(run=FakeRun({}))
@@ -229,7 +252,29 @@ class TestPacmanBackend(unittest.TestCase):
                 0, "Targets (2): foo-1.0-1  libfoo-bar-3.0-2\n\nTotal Removed Size: 0.01 MiB\n", ""),
         })
         b = PacmanBackend(run=run, db_path=self.b.db_path)
-        self.assertEqual(b.simulate_removal(["foo"]), ["foo", "libfoo-bar"])
+        got, parsed_ok = b.simulate_removal(["foo"])
+        self.assertEqual(got, ["foo", "libfoo-bar"])
+        self.assertTrue(parsed_ok)
+
+    def test_simulate_fallback_flags_parsed_ok_false(self):
+        run = FakeRun({
+            **self.run.table,
+            ("pacman", "-Rs", "--print"): (0, "no targets section here\n", ""),
+        })
+        b = PacmanBackend(run=run, db_path=self.b.db_path)
+        got, parsed_ok = b.simulate_removal(["foo"])
+        self.assertEqual(got, ["foo"])
+        self.assertFalse(parsed_ok)
+
+    def test_malformed_isize_does_not_crash(self):
+        # N8：畸形 ISIZE 只影响该包大小，不拖垮整个列表
+        d = os.path.join(self.b.db_path, "bad-1.0-1")
+        os.makedirs(d)
+        with open(os.path.join(d, "desc"), "w", encoding="utf-8") as f:
+            f.write("%NAME%\nbad\n\n%VERSION%\n1.0-1\n\n%ISIZE%\nnot-a-number\n\n")
+        by = {p.name: p for p in self.b.list_installed()}
+        self.assertIn("bad", by)
+        self.assertEqual(by["bad"].size_bytes, 0)
 
     def test_removal_ops(self):
         self.assertEqual(self.b.removal_ops(["foo"]),
@@ -305,7 +350,8 @@ class TestBaseUtils(unittest.TestCase):
         self.assertEqual(human_size(5 * 1024 * 1024), "5.0 MB")
 
     def test_name_regex(self):
-        for good in ("foo", "libfoo-bar", "g++", "pkg.name", "foo:i386", "a_b-c+d"):
+        for good in ("foo", "libfoo-bar", "g++", "pkg.name", "foo:i386", "a_b-c+d",
+                     "foo@bar"):  # Arch makepkg pkgname 合法字符集含 @
             self.assertTrue(NAME_RE.match(good), good)
         for bad in ("-foo", ";rm", "foo bar", "foo;bar", "$(x)", "", ".hidden"):
             self.assertFalse(NAME_RE.match(bad), bad)

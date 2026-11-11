@@ -10,10 +10,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "--selftest":
         from .gui import run_selftest
         return run_selftest()
-    if argv and not argv[0].startswith("-"):
-        from .cli import main as cli_main
-        return cli_main(argv)
-    if argv:  # 其他 - 开头的旗标（如 --version）交给 CLI 处理
+    if argv:
         from .cli import main as cli_main
         return cli_main(argv)
     from .gui import run_gui

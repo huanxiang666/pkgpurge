@@ -32,6 +32,18 @@
   </recommends>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.1" date="2026-11-11">
+      <description>
+        <p>Security and robustness hardening from independent pre-release review:</p>
+        <ul>
+          <li>pkexec helper now resolves binaries through a fixed PATH with realpath checks and rejects path-form commands (PATH-poisoning hardening).</li>
+          <li>Simulation fallback is now explicitly flagged to the user instead of silently posing as a dependency cascade.</li>
+          <li>GUI removal callbacks catch and surface errors; package-name regex accepts Arch-style '@'.</li>
+          <li>Gtk.AlertDialog usage falls back to MessageDialog on GTK &lt; 4.10 (Ubuntu 22.04).</li>
+          <li>deb gains copyright file and Installed-Size; packaging scripts are executable in git; CI adds an Xvfb GUI selftest and a reproducible mutation check.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-11-11">
       <description>
         <p>First release: APT/DNF/Zypper/Pacman/APK backends, GTK4 GUI, CLI, deb packaging.</p>

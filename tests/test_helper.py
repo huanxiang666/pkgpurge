@@ -5,11 +5,15 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
+import stat
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 
 from pkgpurge import helper
 from pkgpurge.backends import ApkBackend, AptBackend, DnfBackend, PacmanBackend, ZypperBackend
+from pkgpurge.backends.base import NAME_RE as BASE_NAME_RE
 from pkgpurge.backends.pacman import ORPHAN_CLEAN_SCRIPT as PACMAN_SCRIPT
 
 
@@ -37,6 +41,15 @@ class TestValidateOpsAccept(unittest.TestCase):
         self.assertEqual(PACMAN_SCRIPT, helper.ORPHAN_CLEAN_SCRIPT)
         self.assertIn(PACMAN_SCRIPT, helper.BASH_SCRIPT_WHITELIST)
 
+    def test_name_regex_same_source(self):
+        # B3：base 与 helper 的包名正则必须逐字符一致（两处独立定义）
+        self.assertEqual(BASE_NAME_RE.pattern, helper.NAME_RE.pattern)
+
+    def test_at_sign_name_accepted(self):
+        # Arch makepkg pkgname 合法字符集含 @（B3 触发样本）
+        self.assertIsNone(helper.validate_ops(
+            [["pacman", "--noconfirm", "-Rs", "--", "foo@bar"]]))
+
 
 class TestValidateOpsReject(unittest.TestCase):
     def assertRejected(self, ops):
@@ -46,6 +59,14 @@ class TestValidateOpsReject(unittest.TestCase):
         self.assertRejected([["rm", "-rf", "/"]])
         self.assertRejected([["/bin/sh", "-c", "id"]])
         self.assertRejected([["curl", "http://evil"]])
+
+    def test_path_head_rejected(self):
+        # B1：带路径的 head 直接拒绝，不给 basename 洗白的机会
+        self.assertRejected([["/tmp/evil/apt-get", "-y", "remove", "foo"]])
+        self.assertRejected([["./apt-get", "-y", "remove", "foo"]])
+        self.assertRejected([["/usr/bin/apt-get", "-y", "remove", "foo"]])
+        # 裸 "bash" 别名也已移除：只认精确的 /bin/bash + 白名单脚本
+        self.assertRejected([["bash", "-c", PACMAN_SCRIPT]])
 
     def test_bash_arbitrary_script(self):
         self.assertRejected([["/bin/bash", "-c", "rm -rf /"]])
@@ -122,6 +143,47 @@ class TestHelperMain(unittest.TestCase):
     def test_usage_without_args(self):
         rc = helper.main(["pkexec_helper.py"])
         self.assertEqual(rc, 2)
+
+    def _call_raw(self, raw: str) -> tuple[int, str]:
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = helper.main(["pkexec_helper.py", raw])
+        return rc, buf.getvalue()
+
+    def test_non_dict_payload_rejected(self):
+        # N3：payload 为 [] / "x" 时必须 rc=2 + JSON 错误，不许 AttributeError 裸崩
+        for raw in ("[]", '"x"', "42"):
+            rc, out = self._call_raw(raw)
+            self.assertEqual(rc, 2, raw)
+            summary = json.loads([l for l in out.splitlines() if l.strip()][-1])
+            self.assertFalse(summary["ok"])
+            self.assertIn("JSON object", summary["error"])
+
+
+class TestResolveBinary(unittest.TestCase):
+    """B1：解析必须无视被污染的 PATH，只认固定系统目录."""
+
+    @unittest.skipUnless(shutil.which("apt-get", path="/usr/bin"),
+                         "needs real /usr/bin/apt-get")
+    def test_polluted_path_is_ignored(self):
+        with tempfile.TemporaryDirectory(prefix="pkgpurge-pathprobe-") as fake:
+            evil = os.path.join(fake, "apt-get")
+            with open(evil, "w") as f:
+                f.write("#!/bin/sh\necho PWNED\n")
+            os.chmod(evil, os.stat(evil).st_mode | stat.S_IEXEC)
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = fake + os.pathsep + old_path
+            try:
+                resolved = helper.resolve_binary("apt-get")
+            finally:
+                os.environ["PATH"] = old_path
+            self.assertIsNotNone(resolved)
+            self.assertEqual(os.path.realpath(resolved),
+                             os.path.realpath("/usr/bin/apt-get"))
+            self.assertNotIn(fake, resolved)
+
+    def test_unknown_binary_returns_none(self):
+        self.assertIsNone(helper.resolve_binary("definitely-not-a-real-binary"))
 
 
 if __name__ == "__main__":

@@ -26,18 +26,21 @@ class ZypperBackend(RpmListMixin, PackageBackend):
             text += "\n\nRequired by:\n" + req.strip()
         return text
 
-    def simulate_removal(self, names: list[str], purge: bool = False) -> list[str]:
+    def simulate_removal(self, names: list[str], purge: bool = False) -> tuple[list[str], bool]:
         names = validate_names(names)
         rc, out, err = self._run(
             ["zypper", "--non-interactive", "rm", "--dry-run"] + names)
         if rc != 0 and not out:
             raise RuntimeError(f"zypper dry-run failed ({rc}): {err.strip()[:300]}")
-        return self._parse_zypper_removal(out, names)
+        removed = self._parse_zypper_removal(out)
+        # B2：解析失败回退请求名单时必须带 parsed_ok=False，由调用方明示
+        return (removed, True) if removed else (list(names), False)
 
     @staticmethod
-    def _parse_zypper_removal(out: str, fallback: list[str]) -> list[str]:
+    def _parse_zypper_removal(out: str) -> list[str]:
         """解析 dry-run 输出中被标记为移除的包。
-        LIMIT: zypper 表格格式随版本变化，解析失败时退回请求列表本身."""
+        LIMIT: zypper 表格格式随版本变化，解析不出时返回空列表，
+        由 simulate_removal 统一决定回退语义."""
         removed: list[str] = []
         for line in out.splitlines():
             # 表格行形如: "r | foo | 1.0-1 | x86_64 | ..."
@@ -45,7 +48,7 @@ class ZypperBackend(RpmListMixin, PackageBackend):
                 parts = [p.strip() for p in line.split("|")]
                 if len(parts) >= 2 and parts[1] and NAME_RE.match(parts[1]):
                     removed.append(parts[1])
-        return removed or list(fallback)
+        return removed
 
     def removal_ops(self, names: list[str], purge: bool = False) -> list[list[str]]:
         names = validate_names(names)
@@ -57,4 +60,4 @@ class ZypperBackend(RpmListMixin, PackageBackend):
     def autoremove_preview(self) -> list[str]:
         rc, out, _ = self._run(
             ["zypper", "--non-interactive", "rm", "--dry-run", "-u"])
-        return self._parse_zypper_removal(out, []) if (rc == 0 or out) else []
+        return self._parse_zypper_removal(out) if (rc == 0 or out) else []

@@ -1,9 +1,12 @@
 PYTHON ?= python3
 
-.PHONY: test run selftest deb clean install
+.PHONY: test mutation-check run selftest deb clean install
 
 test:
 	$(PYTHON) -m unittest discover -s tests -v
+
+mutation-check:
+	bash scripts/mutation-check.sh
 
 run:
 	$(PYTHON) -m pkgpurge

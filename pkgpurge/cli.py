@@ -80,7 +80,10 @@ def cmd_remove(args) -> int:
     targets = list(args.names)
 
     if backend.supports_simulate:
-        will_remove = backend.simulate_removal(targets, purge=purge)
+        will_remove, parsed_ok = backend.simulate_removal(targets, purge=purge)
+        if not parsed_ok:
+            print("WARNING: dependency-cascade parsing failed; the list below is only"
+                  " your requested packages — the actual removal may include more.")
         if not will_remove:
             print("nothing to remove (package not installed, or only config residue left;"
                   " use --purge to clean rc-state residue on apt)")
@@ -106,7 +109,7 @@ def cmd_remove(args) -> int:
     ops = backend.removal_ops(targets, purge=purge)
     result = elevated_run(ops, dry_run=args.dry_run,
                           line_cb=lambda l: print(l))
-    return _report(result)
+    return _report(result, dry_run=args.dry_run)
 
 
 def cmd_autoremove(args) -> int:
@@ -126,12 +129,14 @@ def cmd_autoremove(args) -> int:
         return 1
     result = elevated_run(backend.autoremove_ops(), dry_run=args.dry_run,
                           line_cb=lambda l: print(l))
-    return _report(result)
+    return _report(result, dry_run=args.dry_run)
 
 
-def _report(result: OpResult) -> int:
+def _report(result: OpResult, dry_run: bool = False) -> int:
     if result.ok:
-        print("OK: " + result.message)
+        # N16：dry-run 与真实卸载必须在文案上可区分，避免脚本误判
+        print("DRY-RUN OK (nothing was removed)" if dry_run
+              else "OK: " + result.message)
         return 0
     if result.cancelled:
         print("CANCELLED: " + result.message)

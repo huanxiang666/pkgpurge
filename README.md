@@ -6,7 +6,7 @@
 A cross-distro Linux package uninstaller: GTK4 GUI + headless CLI.
 Ships as a `.deb` for Debian-based systems, source install for everything else.
 
-![version](https://img.shields.io/badge/version-1.0.0-blue) ![license](https://img.shields.io/badge/license-GPL--3.0-green) ![python](https://img.shields.io/badge/python-≥3.10-yellow)
+![version](https://img.shields.io/badge/version-1.0.1-blue) ![license](https://img.shields.io/badge/license-GPL--3.0--or--later-green) ![python](https://img.shields.io/badge/python-≥3.10-yellow)
 
 ---
 
@@ -15,7 +15,7 @@ Ships as a `.deb` for Debian-based systems, source install for everything else.
 | 功能 | 说明 |
 |---|---|
 | 📦 全量包列表 | 名称、版本、安装大小、摘要、`[auto]` 依赖安装标记 |
-| 🔍 即时搜索 | 按名称/摘要过滤，几千个包不卡顿（worker 线程加载，UI 不冻结） |
+| 🔍 即时搜索 | 按名称/摘要过滤；数据在 worker 线程加载、UI 不冻结（数千包首次建列表约数百 ms） |
 | ✅ 多选卸载 | 复选框多选，状态栏实时计数 |
 | 🧪 级联模拟预览 | 卸载前先跑 `apt-get -s` / `dnf --assumeno` / `pacman --print` / `zypper --dry-run`，**明确区分「你勾选的」和「被依赖带走的」**，确认后才执行 |
 | 🧹 清除配置（purge） | apt `-y --purge remove`、pacman `-Rsn`（rc 残留一键清） |
@@ -40,12 +40,12 @@ Ships as a `.deb` for Debian-based systems, source install for everything else.
 
 ```bash
 # 方式一：从 GitHub Releases 下载
-sudo apt install ./pkgpurge_1.0.0_all.deb
+sudo apt install ./pkgpurge_1.0.1_all.deb
 
 # 方式二：源码构建 deb（需要 dpkg-deb + fakeroot）
 git clone https://github.com/huanxiang666/pkgpurge.git
 cd pkgpurge && make deb
-sudo apt install ./dist/pkgpurge_1.0.0_all.deb
+sudo apt install ./dist/pkgpurge_1.0.1_all.deb
 ```
 
 ### 其他发行版（源码安装）
@@ -57,11 +57,11 @@ sudo apt install ./dist/pkgpurge_1.0.0_all.deb
 #   openSUSE : sudo zypper install python3-gobject gtk4 polkit
 #   Alpine   : doas apk add py3-gobject gtk4.0 polkit
 git clone https://github.com/huanxiang666/pkgpurge.git
-cd pkgpurge && sudo ./packaging/install.sh          # 默认 /usr/local
-sudo ./packaging/install.sh --uninstall             # 卸载
+cd pkgpurge && sudo bash packaging/install.sh          # 默认 /usr/local
+sudo bash packaging/install.sh --uninstall             # 卸载
 ```
 
-依赖：`python3 ≥ 3.10`、`PyGObject (GTK4)`、`pkexec (polkit)`。CLI 不需要 GTK。
+依赖：`python3 ≥ 3.10`、`PyGObject (GTK4 ≥ 4.6；≥ 4.10 用原生 AlertDialog，更老自动降级 MessageDialog)`、`pkexec (polkit)`。CLI 不需要 GTK。
 
 ## 使用 / Usage
 
@@ -84,25 +84,27 @@ pkgpurge remove foo --dry-run            # 走完认证但只回显 root 命令�
 ## 安全模型 / Security model
 
 本机任何进程都可以对 `pkexec_helper.py` 发起 `pkexec` 调用，polkit 弹窗**不展示参数**，
-所以提权助手自身必须 fail-closed。它对每条命令做四层校验，任何一条不过即整体拒绝：
+所以提权助手自身必须 fail-closed。它对每条命令做五层校验，任何一条不过即整体拒绝：
 
-1. **二进制白名单**：仅 `apt-get / dnf / zypper / pacman / apk`，以及仅用于 pacman 孤儿清理的 `/bin/bash`；
-2. **bash 脚本全文匹配**：只放行与内置孤儿清理脚本**逐字符一致**的字符串，杜绝任意 root shell；
-3. **动词白名单**：`apt-get` 只许 `remove/purge/autoremove` —— `install`、`update` 等虽然长得像合法包名也一律拒绝；
-4. **旗标白名单 + 包名正则**：`-` 开头参数必须在旗标白名单内（挡掉 `-oDPkg::Options::=…` 之类注入），其余参数必须匹配 `^[A-Za-z0-9][A-Za-z0-9._+:-]*$`。
+1. **二进制白名单**：仅 `apt-get / dnf / zypper / pacman / apk`，以及仅用于 pacman 孤儿清理的 `/bin/bash`；**带路径的命令头（如 `/tmp/evil/apt-get`）直接拒绝**；
+2. **固定 PATH 解析 + realpath 校验**：解析二进制只用内置的 `/usr/sbin:/usr/bin:/sbin:/bin`，且 realpath 必须落在系统目录——调用方 PATH 被污染也不影响 root 侧执行目标；
+3. **bash 脚本全文匹配**：只放行与内置孤儿清理脚本**逐字符一致**的字符串，杜绝任意 root shell；
+4. **动词白名单**：`apt-get` 只许 `remove/purge/autoremove` —— `install`、`update` 等虽然长得像合法包名也一律拒绝；
+5. **旗标白名单 + 包名正则**：`-` 开头参数必须在旗标白名单内（挡掉 `-oDPkg::Options::=…` 之类注入），其余参数必须匹配 `^[A-Za-z0-9][A-Za-z0-9._+:@-]*$`。
 
-白名单与包名正则的对抗用例见 `tests/test_helper.py`（覆盖 `rm -rf`、`$(id)`、分号拼接、旗标注入、动词伪装等向量），并做了变异测试验证断言真实有效。
+白名单与包名正则的对抗用例见 `tests/test_helper.py`（覆盖 `rm -rf`、`$(id)`、分号拼接、旗标注入、动词伪装、PATH 污染、路径命令头等向量）；断言有效性由 `make mutation-check` 提供可复现佐证（破坏动词白名单 → 测试必须变红，还原 → 变绿）。
 
 ## 开发 / Development
 
 ```bash
-make test       # 50 个单测（假 runner / 临时数据库，不碰真实系统）
-make selftest   # GUI 无头自检：真实加载包列表并校验命令生成
-make run        # 直接跑开发树 GUI
-make deb        # 构建 .deb 并现场核验 control/清单/sha256
+make test             # 62 个单测（假 runner / 临时数据库，不碰真实系统）
+make mutation-check   # 可复现变异检查：破坏白名单 → 测试必须变红，还原 → 变绿
+make selftest         # GUI 无头自检：真实加载包列表并校验命令生成
+make run              # 直接跑开发树 GUI
+make deb              # 构建 .deb 并现场核验 control/清单/sha256
 ```
 
-CI（GitHub Actions）在 ubuntu-22.04 / 24.04 / latest 三档跑单测 + CLI 冒烟 + deb 构建。
+CI（GitHub Actions）在 ubuntu-22.04 / 24.04 / latest 三档跑单测 + 变异检查 + CLI 冒烟 + deb 构建，另设 `gui-selftest` job 在 Xvfb 下真实建窗自检（22.04 的 GTK 4.6 顺带回归 MessageDialog 降级路径）。
 
 ## 已知限制 / Known limits
 

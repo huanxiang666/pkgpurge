@@ -46,25 +46,6 @@ sys.exit(main(sys.argv))
 EOF
 chmod 755 "$STAGE$HELPER"
 
-# --- DEBIAN/control ---
-cat > "$STAGE/DEBIAN/control" <<EOF
-Package: pkgpurge
-Version: ${VERSION}
-Section: admin
-Priority: optional
-Architecture: all
-Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-4.0, pkexec | policykit-1
-Recommends: apt | dnf | zypper | pacman | apk
-Maintainer: huanxiang666 <huanxiang666@users.noreply.github.com>
-Homepage: https://github.com/huanxiang666/pkgpurge
-Description: Cross-distro Linux package uninstaller (GTK4)
- PkgPurge lists every package installed through the system package
- manager (APT, DNF, Zypper, Pacman, APK), supports multi-select
- removal with a dependency-cascade simulation preview, and executes
- removals via pkexec behind a strict command whitelist.
- Ships a headless CLI with JSON output for scripting.
-EOF
-
 # --- postinst / postrm ---
 cat > "$STAGE/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
@@ -76,8 +57,12 @@ EOF
 cat > "$STAGE/DEBIAN/postrm" <<'EOF'
 #!/bin/sh
 set -e
-command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q /usr/share/icons/hicolor || true
-command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q /usr/share/applications || true
+case "$1" in
+  remove|purge|abort-upgrade|failed-upgrade)
+    command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q /usr/share/icons/hicolor || true
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q /usr/share/applications || true
+    ;;
+esac
 exit 0
 EOF
 chmod 755 "$STAGE/DEBIAN/postinst" "$STAGE/DEBIAN/postrm"
@@ -89,6 +74,55 @@ sed "s|@HELPER_PATH@|$HELPER|g" "$ROOT/data/com.github.pkgpurge.policy" \
 chmod 644 "$STAGE/usr/share/polkit-1/actions/com.github.pkgpurge.policy"
 install -m 644 "$ROOT/data/pkgpurge.svg" "$STAGE/usr/share/icons/hicolor/scalable/apps/pkgpurge.svg"
 install -m 644 "$ROOT/data/pkgpurge.metainfo.xml" "$STAGE/usr/share/metainfo/pkgpurge.metainfo.xml"
+
+# --- copyright（N10：GPL 二进制分发必须携带机器可读版权文件）---
+install -d "$STAGE/usr/share/doc/pkgpurge"
+cat > "$STAGE/usr/share/doc/pkgpurge/copyright" <<'EOF'
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: pkgpurge
+Source: https://github.com/huanxiang666/pkgpurge
+
+Files: *
+Copyright: 2026 huanxiang666
+License: GPL-3.0+
+
+License: GPL-3.0+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General Public
+ License version 3 can be found in /usr/share/common-licenses/GPL-3.
+EOF
+
+# --- DEBIAN/control（数据文件全部就位后生成，Installed-Size 用实测值）---
+INSTALLED_SIZE="$(du -sk --exclude=DEBIAN "$STAGE" | cut -f1)"
+cat > "$STAGE/DEBIAN/control" <<EOF
+Package: pkgpurge
+Version: ${VERSION}
+Section: admin
+Priority: optional
+Architecture: all
+Installed-Size: ${INSTALLED_SIZE}
+Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-4.0, pkexec | policykit-1
+Recommends: apt | dnf | zypper | pacman | apk
+Maintainer: huanxiang666 <huanxiang666@users.noreply.github.com>
+Homepage: https://github.com/huanxiang666/pkgpurge
+Description: Cross-distro Linux package uninstaller (GTK4)
+ PkgPurge lists every package installed through the system package
+ manager (APT, DNF, Zypper, Pacman, APK), supports multi-select
+ removal with a dependency-cascade simulation preview, and executes
+ removals via pkexec behind a strict command whitelist.
+ Ships a headless CLI with JSON output for scripting.
+ GTK >= 4.10 uses native AlertDialogs; older GTK4 (>= 4.6, e.g.
+ Ubuntu 22.04) automatically falls back to MessageDialog.
+EOF
 
 # --- 构建 ---
 rm -f "$OUT"

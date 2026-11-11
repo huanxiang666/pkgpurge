@@ -8,9 +8,11 @@ import re
 
 from ..proc import Runner, run_cmd
 
-# 包名白名单正则：字母数字开头，允许 . _ + - : （apt 的 name:arch 形式需要冒号）。
+# 包名白名单正则：字母数字开头，允许 . _ + - : @
+# （apt 的 name:arch 需要冒号；Arch makepkg pkgname 合法字符集含 @）。
 # helper 与后端在构造任何 root 命令前都用它校验，防注入。
-NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+:\-]*$")
+# 两处正则的同源一致性由 tests/test_helper.py::test_name_regex_same_source 断言。
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+:@\-]*$")
 MAX_NAME_LEN = 200
 
 
@@ -83,9 +85,14 @@ class PackageBackend(abc.ABC):
     def info(self, name: str) -> str:
         """单个包的详细信息（人类可读文本）."""
 
-    def simulate_removal(self, names: list[str], purge: bool = False) -> list[str]:
-        """预览将被移除的包（含依赖级联）。不支持时退化为输入本身."""
-        return list(names)
+    def simulate_removal(self, names: list[str], purge: bool = False) -> tuple[list[str], bool]:
+        """预览将被移除的包（含依赖级联）。
+
+        返回 (包列表, parsed_ok)。parsed_ok=False 表示级联解析失败，
+        列表已回退为请求名单——调用方**必须**向用户明示这一点，
+        实际移除可能包含更多依赖（B2：禁止静默回退冒充级联结果）。
+        """
+        return list(names), False
 
     @abc.abstractmethod
     def removal_ops(self, names: list[str], purge: bool = False) -> list[list[str]]:

@@ -68,7 +68,7 @@ class AptBackend(PackageBackend):
             text += "\n\n" + rdep.strip()
         return text
 
-    def simulate_removal(self, names: list[str], purge: bool = False) -> list[str]:
+    def simulate_removal(self, names: list[str], purge: bool = False) -> tuple[list[str], bool]:
         names = validate_names(names)
         cmd = ["apt-get", "-s", "-y"]
         cmd += ["--purge"] if purge else []
@@ -84,7 +84,7 @@ class AptBackend(PackageBackend):
                     removed.append(fields[1])
         # apt 的 Remv/Purg 行解析是确定性的：rc=0 且无移除行 = 无事可做
         # （例如包处于 rc 残留态或根本没装），不回退成输入名单，避免误导。
-        return removed
+        return removed, True
 
     def removal_target(self, pkg) -> str:
         # multiarch：非本机架构的包必须用 name:arch 精确卸载，避免连带另一架构。

@@ -32,12 +32,14 @@ class DnfBackend(RpmListMixin, PackageBackend):
             text += "\n\nRequired by:\n" + req.strip()
         return text
 
-    def simulate_removal(self, names: list[str], purge: bool = False) -> list[str]:
+    def simulate_removal(self, names: list[str], purge: bool = False) -> tuple[list[str], bool]:
         names = validate_names(names)
         rc, out, err = self._run(["dnf", "-y", "--assumeno", "remove"] + names)
         if rc != 0 and not out:
             raise RuntimeError(f"dnf simulate failed ({rc}): {err.strip()[:300]}")
-        return self._parse_dnf_removal(out) or list(names)
+        parsed = self._parse_dnf_removal(out)
+        # B2：解析失败回退请求名单时必须带 parsed_ok=False，由调用方明示
+        return (parsed, True) if parsed else (list(names), False)
 
     @staticmethod
     def _parse_dnf_removal(out: str) -> list[str]:
